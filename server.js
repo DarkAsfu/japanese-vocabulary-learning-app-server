@@ -220,6 +220,100 @@ app.post('/lessons/:lessonId/vocabulary', authenticate, authorize(['Admin']), as
         res.status(400).json({ error: error.message });
     }
 });
+// Get Vocabulary by Lesson ID (Logged-In Users)
+app.get('/lessons/:lessonId/vocabulary', authenticate, async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        const lesson = await Lesson.findById(lessonId, 'vocabularies');
+        if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+        res.status(200).json(lesson.vocabularies);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.get('/vocabularies', authenticate, authorize(['Admin']), async (req, res) => {
+    try {
+        const { lessonNo } = req.query; // Filtering by lesson number
+
+        const filter = lessonNo ? { number: lessonNo } : {};
+        const lessons = await Lesson.find(filter, 'number vocabularies');
+
+        // Flatten vocabularies across all lessons
+        const vocabularies = lessons.flatMap((lesson) => {
+            return lesson.vocabularies.map((vocab) => ({
+                word: vocab.word,
+                pronunciation: vocab.pronunciation,
+                meaning: vocab.meaning,
+                whenToUse: vocab.whenToUse,
+                lessonNo: lesson.number,
+                lessonId: lesson._id, // Include lesson ID for update/delete references
+                vocabId: vocab._id,  // Include vocabulary ID for update/delete references
+            }));
+        });
+
+        res.status(200).json(vocabularies);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+// Update Vocabulary (Admin Only)
+app.patch('/lessons/:lessonId/vocabulary/:vocabId', authenticate, authorize(['Admin']), async (req, res) => {
+    try {
+        const { lessonId, vocabId } = req.params;
+        const { word, pronunciation, meaning, whenToUse } = req.body;
+
+        // Validate ObjectId
+        if (!mongoose.Types.ObjectId.isValid(lessonId) || !mongoose.Types.ObjectId.isValid(vocabId)) {
+            return res.status(400).json({ error: 'Invalid ID format' });
+        }
+
+        const lesson = await Lesson.findById(lessonId);
+        if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+        const vocabIndex = lesson.vocabularies.findIndex(vocab => vocab._id.toString() === vocabId);
+        if (vocabIndex === -1) return res.status(404).json({ error: 'Vocabulary not found' });
+
+        // Update the vocabulary
+        lesson.vocabularies[vocabIndex] = {
+            ...lesson.vocabularies[vocabIndex],
+            word,
+            pronunciation,
+            meaning,
+            whenToUse
+        };
+
+        await lesson.save();
+        res.status(200).json({ message: 'Vocabulary updated successfully' });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+// Delete Vocabulary (Admin Only)
+app.delete('/lessons/:lessonId/vocabulary/:vocabId', authenticate, authorize(['Admin']), async (req, res) => {
+    try {
+        const { lessonId, vocabId } = req.params;
+
+        // Validate ObjectId
+        if (!mongoose.Types.ObjectId.isValid(lessonId) || !mongoose.Types.ObjectId.isValid(vocabId)) {
+            return res.status(400).json({ error: 'Invalid ID format' });
+        }
+
+        const lesson = await Lesson.findById(lessonId);
+        if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+        const vocabIndex = lesson.vocabularies.findIndex(vocab => vocab._id.toString() === vocabId);
+        if (vocabIndex === -1) return res.status(404).json({ error: 'Vocabulary not found' });
+
+        // Remove the vocabulary
+        lesson.vocabularies.splice(vocabIndex, 1);
+        await lesson.save();
+
+        res.status(200).json({ message: 'Vocabulary deleted successfully' });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
 
 // Run Server
 const PORT = 5000;
